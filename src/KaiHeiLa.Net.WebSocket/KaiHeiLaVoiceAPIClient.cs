@@ -69,6 +69,7 @@ namespace KaiHeiLa.Audio
         private readonly JsonSerializerOptions _serializerOptions;
         private readonly SemaphoreSlim _connectionLock;
         private readonly IUdpSocket _udp;
+        private readonly ConcurrentDictionary<uint, VoiceSocketFrameType> _sentFrames;
         private CancellationTokenSource _connectCancelToken;
         private bool _isDisposed;
         private ulong _nextKeepalive;
@@ -79,12 +80,15 @@ namespace KaiHeiLa.Audio
         public ConnectionState ConnectionState { get; private set; }
 
         public ushort UdpPort => _udp.Port;
+        
+        public ConcurrentDictionary<uint, VoiceSocketFrameType> SentFrames => _sentFrames;
 
         internal KaiHeiLaVoiceAPIClient(ulong guildId, WebSocketProvider webSocketProvider, 
             UdpSocketProvider udpSocketProvider, JsonSerializerOptions serializerOptions = null)
         {
             GuildId = guildId;
             _sequence = 1000000;
+            _sentFrames = new ConcurrentDictionary<uint, VoiceSocketFrameType>();
             _connectionLock = new SemaphoreSlim(1, 1);
             _udp = udpSocketProvider();
             _udp.ReceivedDatagram += async (data, index, count) =>
@@ -148,9 +152,10 @@ namespace KaiHeiLa.Audio
         public async Task SendAsync(VoiceSocketFrameType type, object payload, RequestOptions options = null)
         {
             byte[] bytes = null;
-            payload = new VoiceSocketRequestFrame { Type = type, Id = _sequence++, Request = true, Payload = payload };
+            payload = new VoiceSocketRequestFrame { Type = type, Id = _sequence, Request = true, Payload = payload };
             bytes = System.Text.Encoding.UTF8.GetBytes(SerializeJson(payload));
             await WebSocketClient.SendAsync(bytes, 0, bytes.Length, true).ConfigureAwait(false);
+            _sentFrames[_sequence++] = type;
             await _sentGatewayMessageEvent.InvokeAsync(type).ConfigureAwait(false);
         }
         public async Task SendAsync(byte[] data, int offset, int bytes)

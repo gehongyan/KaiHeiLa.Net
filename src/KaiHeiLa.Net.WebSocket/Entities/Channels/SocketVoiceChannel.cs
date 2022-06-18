@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using KaiHeiLa.Audio;
 using KaiHeiLa.Rest;
 using Model = KaiHeiLa.API.Channel;
 
@@ -92,6 +93,16 @@ public class SocketVoiceChannel : SocketGuildChannel, IVoiceChannel, ISocketAudi
     public Task ModifyAsync(Action<ModifyVoiceChannelProperties> func, RequestOptions options = null)
         => ChannelHelper.ModifyAsync(this, KaiHeiLa, func, options);
 
+    /// <inheritdoc />
+    public async Task<IAudioClient> ConnectAsync()
+    {
+        return await Guild.ConnectAudioAsync(Id).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DisconnectAsync()
+        => await Guild.DisconnectAudioAsync();
+    
     // /// <inheritdoc />
     // public override SocketGuildUser GetUser(ulong id)
     // {

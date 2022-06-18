@@ -14,5 +14,5 @@ internal class CreatePlainTransportResponse
     public int Port { get; set; }
 
     [JsonPropertyName("rtcpPort")]
-    public string RTCPPort { get; set; }
+    public int RTCPPort { get; set; }
 }

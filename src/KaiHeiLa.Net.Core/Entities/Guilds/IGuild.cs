@@ -1,4 +1,6 @@
-﻿namespace KaiHeiLa;
+﻿using KaiHeiLa.Audio;
+
+namespace KaiHeiLa;
 
 /// <summary>
 ///     Represents a generic guild/server.
@@ -90,6 +92,13 @@ public interface IGuild : IEntity<ulong>
     ///     <see langword="true"/> if this guild is currently connected and ready to be used; otherwise <see langword="false"/>.
     /// </returns>
     bool Available { get; }
+    /// <summary>
+    ///     Gets the <see cref="IAudioClient"/> currently associated with this guild.
+    /// </summary>
+    /// <returns>
+    ///     An <see cref="IAudioClient"/> currently associated with this guild.
+    /// </returns>
+    IAudioClient AudioClient { get; }
     /// <summary>
     ///     Gets the built-in role containing all users in this guild.
     /// </summary>

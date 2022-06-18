@@ -856,10 +856,17 @@ internal class KaiHeiLaRestApiClient : IDisposable
     
     #region Gateway
     
-    public async Task<GetGatewayResponse> GetGatewayAsync(bool isCompressed = true, RequestOptions options = null)
+    public async Task<GetBotGatewayResponse> GetBotGatewayAsync(bool isCompressed = true, RequestOptions options = null)
     {
         options = RequestOptions.CreateOrClone(options);
-        return await SendAsync<GetGatewayResponse>(HttpMethod.Get, () => $"gateway/index?compress={(isCompressed ? 1 : 0)}", new BucketIds(), options: options).ConfigureAwait(false);
+        return await SendAsync<GetBotGatewayResponse>(HttpMethod.Get, () => $"gateway/index?compress={(isCompressed ? 1 : 0)}", new BucketIds(), options: options).ConfigureAwait(false);
+    }
+
+    public async Task<GetVoiceGatewayResponse> GetVoiceGatewayAsync(ulong channelId, RequestOptions options = null)
+    {
+        Preconditions.NotEqual(channelId, 0, nameof(channelId));
+        options = RequestOptions.CreateOrClone(options);
+        return await SendAsync<GetVoiceGatewayResponse>(HttpMethod.Get, () => $"gateway/voice?channel_id={channelId}", new BucketIds(), options: options).ConfigureAwait(false);
     }
 
     #endregion

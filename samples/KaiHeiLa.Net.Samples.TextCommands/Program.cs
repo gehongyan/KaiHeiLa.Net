@@ -13,11 +13,6 @@ namespace TextCommandFramework
     // This is a minimal example of using KaiHeiLa.Net's command
     // framework - by no means does it show everything the framework
     // is capable of.
-    //
-    // You can find samples of using the command framework:
-    // - Here, under the 02_commands_framework sample
-    // - https://github.com/foxbot/KaiHeiLaBotBase - a bare-bones bot template
-    // - https://github.com/foxbot/patek - a more feature-filled bot, utilizing more aspects of the library
     class Program
     {
         // There is no need to implement IDisposable like before as we are

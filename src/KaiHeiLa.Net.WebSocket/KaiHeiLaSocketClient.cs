@@ -6,6 +6,7 @@ using System.Text.Json;
 using KaiHeiLa.API;
 using KaiHeiLa.API.Gateway;
 using KaiHeiLa.API.Rest;
+using KaiHeiLa.Audio;
 using KaiHeiLa.Logging;
 using KaiHeiLa.Net;
 using KaiHeiLa.Net.Udp;
@@ -30,6 +31,7 @@ public partial class KaiHeiLaSocketClient : BaseSocketClient, IKaiHeiLaClient
     private Task _heartbeatTask, _guildDownloadTask;
     private int _unavailableGuildCount;
     private long _lastGuildAvailableTime, _lastMessageTime;
+    private int _nextAudioId;
 
     private bool _isDisposed;
 
@@ -94,6 +96,7 @@ public partial class KaiHeiLaSocketClient : BaseSocketClient, IKaiHeiLaClient
         _connection.Connected += () => TimedInvokeAsync(_connectedEvent, nameof(Connected));
         _connection.Disconnected += (ex, recon) => TimedInvokeAsync(_disconnectedEvent, nameof(Disconnected), ex);
 
+        _nextAudioId = 1;
         _serializerOptions = new JsonSerializerOptions {Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping};
 
         ApiClient.SentGatewayMessage += async socketFrameType =>
@@ -1148,6 +1151,14 @@ public partial class KaiHeiLaSocketClient : BaseSocketClient, IKaiHeiLaClient
                                                     ?? SocketUnknownUser.Create(this, State, data.UserId) as SocketUser;
                                         
                                         await TimedInvokeAsync(_userConnectedEvent, nameof(UserConnected), user, channel, guild, data.At).ConfigureAwait(false);
+                                        
+                                        if (user.Id == CurrentUser.Id)
+                                        {
+                                            foreach (IAudioClient audioClient in Guilds.Where(g => g.AudioClient is not null).Select(g => g.AudioClient))
+                                            {
+                                                await (audioClient as AudioClient).SelfConnectPromise.TrySetResultAsync(true);
+                                            }
+                                        }
                                     }
                                     else
                                     {
@@ -1736,6 +1747,8 @@ public partial class KaiHeiLaSocketClient : BaseSocketClient, IKaiHeiLaClient
         await _gatewayLogger.DebugAsync($"Unsynced Guild ({details}).").ConfigureAwait(false);
     }
 
+    internal int GetAudioId() => _nextAudioId++;
+    
     #region IKaiHeiLaClient
 
     /// <inheritdoc />

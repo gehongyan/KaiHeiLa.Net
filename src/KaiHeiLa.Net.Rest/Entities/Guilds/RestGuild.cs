@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using KaiHeiLa.API;
+using KaiHeiLa.Audio;
 using Model = KaiHeiLa.API.Guild;
 using ExtendedModel = KaiHeiLa.API.Rest.ExtendedGuild;
 
@@ -549,6 +550,8 @@ public class RestGuild : RestEntity<ulong>, IGuild, IUpdateable
     
     /// <inheritdoc />
     bool IGuild.Available => Available;
+    /// <inheritdoc />
+    IAudioClient IGuild.AudioClient => null;
     
     /// <inheritdoc />
     IReadOnlyCollection<IRole> IGuild.Roles => Roles;

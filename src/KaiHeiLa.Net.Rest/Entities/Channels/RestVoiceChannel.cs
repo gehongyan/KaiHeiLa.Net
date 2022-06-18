@@ -1,6 +1,7 @@
 using Model = KaiHeiLa.API.Channel;
 
 using System.Diagnostics;
+using KaiHeiLa.Audio;
 
 namespace KaiHeiLa.Rest;
 
@@ -101,6 +102,12 @@ public class RestVoiceChannel : RestGuildChannel, IVoiceChannel, IRestAudioChann
     
     private string DebuggerDisplay => $"{Name} ({Id}, Voice)";
     
+    #region IAudioChannel
+    /// <inheritdoc />
+    /// <exception cref="NotSupportedException">Connecting to a REST-based channel is not supported.</exception>
+    Task<IAudioClient> IAudioChannel.ConnectAsync() { throw new NotSupportedException(); }
+    Task IAudioChannel.DisconnectAsync() { throw new NotSupportedException(); }
+    #endregion
     
     #region IGuildChannel
     

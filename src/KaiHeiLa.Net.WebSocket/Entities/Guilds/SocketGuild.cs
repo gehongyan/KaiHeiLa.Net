@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using KaiHeiLa.API;
 using KaiHeiLa.API.Gateway;
+using KaiHeiLa.Audio;
 using KaiHeiLa.Rest;
 using Model = KaiHeiLa.API.Guild;
 using ChannelModel = KaiHeiLa.API.Channel;
@@ -22,10 +23,14 @@ public class SocketGuild : SocketEntity<ulong>, IGuild, IDisposable, IUpdateable
 {
     #region SocketGuild
 
+    private readonly SemaphoreSlim _audioLock;
+    private TaskCompletionSource<AudioClient> _audioConnectPromise;
     private ConcurrentDictionary<ulong, SocketGuildChannel> _channels;
     private ConcurrentDictionary<ulong, SocketGuildUser> _members;
     private ConcurrentDictionary<uint, SocketRole> _roles;
     // private ImmutableArray<GuildEmote> _emotes;
+    
+    private AudioClient _audioClient;
     
     /// <inheritdoc />
     public string Name { get; private set; }
@@ -106,6 +111,10 @@ public class SocketGuild : SocketEntity<ulong>, IGuild, IDisposable, IUpdateable
     public bool IsConnected { get; internal set; }
     /// <summary> Indicates whether the client has all the members downloaded to the local guild cache. </summary>
     public bool HasAllMembers => MemberCount <= DownloadedMemberCount;
+    /// <summary>
+    ///     Gets the <see cref="IAudioClient" /> associated with this guild.
+    /// </summary>
+    public IAudioClient AudioClient => _audioClient;
     
     /// <summary>
     ///     Gets the current logged-in user.
@@ -219,6 +228,7 @@ public class SocketGuild : SocketEntity<ulong>, IGuild, IDisposable, IUpdateable
     
     internal SocketGuild(KaiHeiLaSocketClient kaiHeiLa, ulong id) : base(kaiHeiLa, id)
     {
+        _audioLock = new SemaphoreSlim(1, 1);
     }
     internal static SocketGuild Create(KaiHeiLaSocketClient client, ClientState state, Model model)
     {
@@ -771,8 +781,128 @@ public class SocketGuild : SocketEntity<ulong>, IGuild, IDisposable, IUpdateable
 
     #endregion
     
+    #region Audio
+    
+    internal AudioInStream GetAudioStream(ulong userId)
+    {
+        return _audioClient?.GetInputStream(userId);
+    }
+    internal async Task<IAudioClient> ConnectAudioAsync(ulong channelId)
+    {
+        TaskCompletionSource<AudioClient> promise;
+
+        await _audioLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await DisconnectAudioInternalAsync().ConfigureAwait(false);
+            promise = new TaskCompletionSource<AudioClient>();
+            _audioConnectPromise = promise;
+
+            if (_audioClient == null)
+            {
+                var audioClient = new AudioClient(this, KaiHeiLa.GetAudioId(), channelId);
+                audioClient.Disconnected += async ex =>
+                {
+                    if (!promise.Task.IsCompleted)
+                    {
+                        try
+                        { audioClient.Dispose(); }
+                        catch { }
+                        _audioClient = null;
+                        if (ex != null)
+                            await promise.TrySetExceptionAsync(ex);
+                        else
+                            await promise.TrySetCanceledAsync();
+                        return;
+                    }
+                };
+                audioClient.Connected += () =>
+                {
+                    var _ = promise.TrySetResultAsync(_audioClient);
+                    return Task.Delay(0);
+                };
+                _audioClient = audioClient;
+            }
+        }
+        catch
+        {
+            await DisconnectAudioInternalAsync().ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            _audioLock.Release();
+        }
+
+        var _ = FinishConnectAudio().ConfigureAwait(false);
+        
+        try
+        {
+            var timeoutTask = Task.Delay(15000);
+            if (await Task.WhenAny(promise.Task, timeoutTask).ConfigureAwait(false) == timeoutTask)
+                throw new TimeoutException();
+            return await promise.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            await DisconnectAudioAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    internal async Task DisconnectAudioAsync()
+    {
+        await _audioLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await DisconnectAudioInternalAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _audioLock.Release();
+        }
+    }
+    private async Task DisconnectAudioInternalAsync()
+    {
+        _audioConnectPromise?.TrySetCanceledAsync(); //Cancel any previous audio connection
+        _audioConnectPromise = null;
+        if (_audioClient != null)
+            await _audioClient.StopAsync().ConfigureAwait(false);
+        _audioClient?.Dispose();
+        _audioClient = null;
+    }
+
+    internal async Task FinishConnectAudio()
+    {
+        await _audioLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_audioClient != null)
+            {
+                await _audioClient.StartAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await DisconnectAudioInternalAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            await _audioConnectPromise.SetExceptionAsync(e).ConfigureAwait(false);
+            await DisconnectAudioInternalAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _audioLock.Release();
+        }
+    }
+    
+    #endregion
+    
     #region IGuild
     
+    /// <inheritdoc />
+    IAudioClient IGuild.AudioClient => AudioClient;
     /// <inheritdoc />
     bool IGuild.Available => true;
     
@@ -885,5 +1015,12 @@ public class SocketGuild : SocketEntity<ulong>, IGuild, IDisposable, IUpdateable
         return await GuildHelper.GetBadgeAsync(this, KaiHeiLa, style, options).ConfigureAwait(false);
     }
 
+    void IDisposable.Dispose()
+    {
+        DisconnectAudioAsync().GetAwaiter().GetResult();
+        _audioLock?.Dispose();
+        _audioClient?.Dispose();
+    }
+    
     #endregion
 }

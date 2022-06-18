@@ -167,10 +167,9 @@ namespace KaiHeiLa
             await _logger.InfoAsync("Disconnected").ConfigureAwait(false);
         }
 
-        public Task CompleteAsync()
+        public async Task CompleteAsync()
         {
-            _readyPromise.TrySetResult(true);
-            return Task.CompletedTask;
+            await _readyPromise.TrySetResultAsync(true).ConfigureAwait(false);
         }
         public async Task WaitAsync()
         {
