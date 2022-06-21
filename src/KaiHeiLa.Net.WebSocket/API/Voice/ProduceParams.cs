@@ -37,6 +37,7 @@ internal class RTPParameters
 
 internal class Encoding
 {
+    [JsonPropertyName("ssrc")]
     public uint SSRC { get; set; }
 }
 

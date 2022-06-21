@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using KaiHeiLa.API.Rest;
 using KaiHeiLa.Audio.Streams;
 
@@ -38,16 +39,14 @@ namespace KaiHeiLa.Audio
         private readonly SemaphoreSlim _stateLock;
         private readonly ConcurrentQueue<long> _heartbeatTimes;
         private readonly ConcurrentQueue<KeyValuePair<ulong, int>> _keepaliveTimes;
-        private readonly ConcurrentDictionary<uint, ulong> _ssrcMap;
+        private readonly ConcurrentDictionary<uint, ulong> _ssrcMap;    // no related events, not used yet
         private readonly ConcurrentDictionary<ulong, StreamPair> _streams;
 
-        private TaskCompletionSource<bool> _selfConnectPromise;
-        // private Task _heartbeatTask;
         private Task _keepaliveTask;
         private long _lastMessageTime;
-        private string _url, _token;
+        private string _url, _token;    // not used yet
         private uint _ssrc;
-        private bool _isSpeaking;
+        private bool _isSpeaking;       // not used yet
 
         public SocketGuild Guild { get; }
         public KaiHeiLaVoiceAPIClient ApiClient { get; private set; }
@@ -55,10 +54,10 @@ namespace KaiHeiLa.Audio
         public int UdpLatency { get; private set; }
         public ulong ChannelId { get; internal set; }
         internal byte[] SecretKey { get; private set; }
+        internal TaskCompletionSource<bool> SelfConnectPromise { get; private set; }
 
         private KaiHeiLaSocketClient KaiHeiLa => Guild.KaiHeiLa;
         public ConnectionState ConnectionState => _connection.State;
-        internal TaskCompletionSource<bool> SelfConnectPromise => _selfConnectPromise;
 
         /// <summary> Creates a new REST/WebSocket KaiHeiLa client. </summary>
         internal AudioClient(SocketGuild guild, int clientId, ulong channelId)
@@ -71,7 +70,8 @@ namespace KaiHeiLa.Audio
             ApiClient.SentGatewayMessage += async opCode => await _audioLogger.DebugAsync($"Sent {opCode}").ConfigureAwait(false);
             ApiClient.SentDiscovery += async () => await _audioLogger.DebugAsync("Sent Discovery").ConfigureAwait(false);
             //ApiClient.SentData += async bytes => await _audioLogger.DebugAsync($"Sent {bytes} Bytes").ConfigureAwait(false);
-            ApiClient.ReceivedEvent += ProcessMessageAsync;
+            ApiClient.ReceivedResponse += ProcessResponseAsync;
+            ApiClient.ReceivedNotification += ProcessNotificationAsync;
             ApiClient.ReceivedPacket += ProcessPacketAsync;
 
             _stateLock = new SemaphoreSlim(1, 1);
@@ -85,12 +85,11 @@ namespace KaiHeiLa.Audio
             _ssrcMap = new ConcurrentDictionary<uint, ulong>();
             _streams = new ConcurrentDictionary<ulong, StreamPair>();
 
-            _serializerOptions = new JsonSerializerOptions {Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping};
-            // _serializerOptions.Error += (s, e) =>
-            // {
-            //     _audioLogger.WarningAsync(e.ErrorContext.Error).GetAwaiter().GetResult();
-            //     e.ErrorContext.Handled = true;
-            // };
+            _serializerOptions = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            };
 
             LatencyUpdated += async (old, val) => await _audioLogger.DebugAsync($"Latency = {val} ms").ConfigureAwait(false);
             UdpLatencyUpdated += async (old, val) => await _audioLogger.DebugAsync($"UDP Latency = {val} ms").ConfigureAwait(false);
@@ -114,11 +113,12 @@ namespace KaiHeiLa.Audio
         private async Task OnConnectingAsync()
         {
             await _audioLogger.DebugAsync("Connecting ApiClient").ConfigureAwait(false);
+            
+            SelfConnectPromise = new TaskCompletionSource<bool>();
             GetVoiceGatewayResponse gateway = await KaiHeiLa.ApiClient.GetVoiceGatewayAsync(ChannelId).ConfigureAwait(false);
             await ApiClient.ConnectAsync(gateway.Url).ConfigureAwait(false);
             await _audioLogger.DebugAsync("Listening on port " + ApiClient.UdpPort).ConfigureAwait(false);
-            await _audioLogger.DebugAsync("Sending Identity").ConfigureAwait(false);
-            // await ApiClient.SendIdentityAsync(_userId, _sessionId, _token).ConfigureAwait(false);
+            await _audioLogger.DebugAsync("Exchanging parameters").ConfigureAwait(false);
             await ApiClient.SendGetRouterRTPCapabilitiesRequestAsync().ConfigureAwait(false);
 
             //Wait for READY
@@ -128,13 +128,7 @@ namespace KaiHeiLa.Audio
         {
             await _audioLogger.DebugAsync("Disconnecting ApiClient").ConfigureAwait(false);
             await ApiClient.DisconnectAsync().ConfigureAwait(false);
-
             //Wait for tasks to complete
-            await _audioLogger.DebugAsync("Waiting for heartbeater").ConfigureAwait(false);
-            // var heartbeatTask = _heartbeatTask;
-            // if (heartbeatTask != null)
-            //     await heartbeatTask.ConfigureAwait(false);
-            // _heartbeatTask = null;
             var keepaliveTask = _keepaliveTask;
             if (keepaliveTask != null)
                 await keepaliveTask.ConfigureAwait(false);
@@ -144,9 +138,6 @@ namespace KaiHeiLa.Audio
             _lastMessageTime = 0;
 
             await ClearInputStreamsAsync().ConfigureAwait(false);
-
-            // await _audioLogger.DebugAsync("Sending Voice State").ConfigureAwait(false);
-            // await KaiHeiLa.ApiClient.SendVoiceStateUpdateAsync(Guild.Id, null, false, false).ConfigureAwait(false);
         }
 
         public AudioOutStream CreateOpusStream(int bufferMillis)
@@ -217,12 +208,15 @@ namespace KaiHeiLa.Audio
             _streams.Clear();
         }
 
-        private async Task ProcessMessageAsync(uint id, bool okay, object payload)
+        private async Task ProcessResponseAsync(uint id, bool okay, object payload)
         {
             _lastMessageTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             if (!ApiClient.SentFrames.TryRemove(id, out VoiceSocketFrameType type) || !okay)
-                await _audioLogger.ErrorAsync($"Error handling event with id {id}").ConfigureAwait(false);
-            
+            {
+                await _audioLogger.ErrorAsync($"Error handling gateway response with id {id}").ConfigureAwait(false);
+                return;
+            }
+
             try
             {
                 switch (type)
@@ -236,7 +230,6 @@ namespace KaiHeiLa.Audio
                     case VoiceSocketFrameType.Join:
                         {
                             await _audioLogger.DebugAsync($"Received Response of {type}").ConfigureAwait(false);
-                            _selfConnectPromise = new TaskCompletionSource<bool>();
                             await ApiClient.SendCreatePlainTransportRequestAsync().ConfigureAwait(false);
                         }
                         break;
@@ -247,79 +240,18 @@ namespace KaiHeiLa.Audio
                             ApiClient.SetUdpEndpoint(data.Ip, data.Port);
                             _ssrc = (uint) _ssrcGenerator.Next(1, ushort.MaxValue);
                             // Wait for self user connects
-                            Console.WriteLine("1111");
-                            await _selfConnectPromise.Task.ConfigureAwait(false);
-                            Console.WriteLine("2222");
+                            await SelfConnectPromise.Task.ConfigureAwait(false);
                             await ApiClient.SendProduceRequestAsync(data.Id, _ssrc).ConfigureAwait(false);
                         }
                         break;
                     case VoiceSocketFrameType.Produce:
                         {
                             await _audioLogger.DebugAsync($"Received Response of {type}").ConfigureAwait(false);
-                            // _heartbeatTask = RunHeartbeatAsync(_connection.CancelToken);
                             _keepaliveTask = RunKeepaliveAsync(5000, _connection.CancelToken);
 
                             var _ = _connection.CompleteAsync();
                         }
                         break;
-                    
-                    // case VoiceOpCode.Ready:
-                    //     {
-                    //         await _audioLogger.DebugAsync("Received Ready").ConfigureAwait(false);
-                    //         var data = (payload as JToken).ToObject<ReadyEvent>(_serializerOptions);
-                    //
-                    //         _ssrc = data.SSRC;
-                    //
-                    //         if (!data.Modes.Contains(KaiHeiLaVoiceAPIClient.Mode))
-                    //             throw new InvalidOperationException($"KaiHeiLa does not support {KaiHeiLaVoiceAPIClient.Mode}");
-                    //
-                    //         ApiClient.SetUdpEndpoint(data.Ip, data.Port);
-                    //         await ApiClient.SendDiscoveryAsync(_ssrc).ConfigureAwait(false);
-                    //
-                    //
-                    //         _heartbeatTask = RunHeartbeatAsync(_connection.CancelToken);
-                    //     }
-                    //     break;
-                    // case VoiceOpCode.SessionDescription:
-                    //     {
-                    //         await _audioLogger.DebugAsync("Received SessionDescription").ConfigureAwait(false);
-                    //         var data = (payload as JToken).ToObject<SessionDescriptionEvent>(_serializerOptions);
-                    //
-                    //         if (data.Mode != KaiHeiLaVoiceAPIClient.Mode)
-                    //             throw new InvalidOperationException($"KaiHeiLa selected an unexpected mode: {data.Mode}");
-                    //
-                    //         SecretKey = data.SecretKey;
-                    //         _isSpeaking = false;
-                    //         await ApiClient.SendSetSpeaking(false).ConfigureAwait(false);
-                    //         _keepaliveTask = RunKeepaliveAsync(5000, _connection.CancelToken);
-                    //
-                    //         var _ = _connection.CompleteAsync();
-                    //     }
-                    //     break;
-                    // case VoiceOpCode.HeartbeatAck:
-                    //     {
-                    //         await _audioLogger.DebugAsync("Received HeartbeatAck").ConfigureAwait(false);
-                    //
-                    //         if (_heartbeatTimes.TryDequeue(out long time))
-                    //         {
-                    //             int latency = (int)(Environment.TickCount - time);
-                    //             int before = Latency;
-                    //             Latency = latency;
-                    //
-                    //             await _latencyUpdatedEvent.InvokeAsync(before, latency).ConfigureAwait(false);
-                    //         }
-                    //     }
-                    //     break;
-                    // case VoiceOpCode.Speaking:
-                    //     {
-                    //         await _audioLogger.DebugAsync("Received Speaking").ConfigureAwait(false);
-                    //
-                    //         var data = (payload as JToken).ToObject<SpeakingEvent>(_serializerOptions);
-                    //         _ssrcMap[data.Ssrc] = data.UserId; //TODO: Memory Leak: SSRCs are never cleaned up
-                    //
-                    //         await _speakingUpdatedEvent.InvokeAsync(data.UserId, data.Speaking);
-                    //     }
-                    //     break;
                     default:
                         await _audioLogger.WarningAsync($"Unknown Socket Frame ({type})").ConfigureAwait(false);
                         return;
@@ -327,9 +259,45 @@ namespace KaiHeiLa.Audio
             }
             catch (Exception ex)
             {
-                await _audioLogger.ErrorAsync($"Error handling {type}", ex).ConfigureAwait(false);
+                await _audioLogger.ErrorAsync($"Error handling gateway response {type}", ex).ConfigureAwait(false);
                 return;
             }
+        }
+        private async Task ProcessNotificationAsync(VoiceSocketFrameType type, object payload)
+        {
+            _lastMessageTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            
+            try
+            {
+                // TODO: Handle notifications
+                switch (type)
+                {
+                    case VoiceSocketFrameType.NewPeer:
+                    {
+                        await _audioLogger.DebugAsync($"Received Notification of {type}").ConfigureAwait(false);
+                        break;
+                    }
+                    case VoiceSocketFrameType.NetworkStat:
+                    {
+                        await _audioLogger.DebugAsync($"Received Notification of {type}").ConfigureAwait(false);
+                        break;
+                    }
+                    case VoiceSocketFrameType.PeerClosed:
+                    {
+                        await _audioLogger.DebugAsync($"Received Notification of {type}").ConfigureAwait(false);
+                        break;
+                    }
+                    default:
+                        await _audioLogger.WarningAsync($"Unknown Socket Frame ({type})").ConfigureAwait(false);
+                        return;
+                }
+            }
+            catch (Exception ex)
+            {
+                await _audioLogger.ErrorAsync($"Error handling gateway notification {type}", ex).ConfigureAwait(false);
+                return;
+            }
+            
         }
         private async Task ProcessPacketAsync(byte[] packet)
         {

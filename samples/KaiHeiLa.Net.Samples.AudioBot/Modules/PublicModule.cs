@@ -33,5 +33,24 @@ namespace KaiHeiLa.Net.Samples.AudioBot.Modules
             AudioClientManager.AudioClient = await channel.ConnectAsync();
         }
         
+        [Command("leave", RunMode = RunMode.Async)] 
+        public async Task LeaveChannel()
+        {
+            IReadOnlyCollection<IVoiceChannel> channels = await Context.Message.Guild.CurrentUser
+                .GetConnectedVoiceChannelsAsync().ConfigureAwait(false);
+
+            if (!channels.Any())
+            {
+                await Context.Channel.SendKMarkdownMessageAsync(
+                    "Bot must be in a voice channel to leave.");
+                return;
+            }
+            
+            foreach (IVoiceChannel voiceChannel in channels)
+            {
+                await voiceChannel.DisconnectAsync();
+            }
+        }
+        
     }
 }

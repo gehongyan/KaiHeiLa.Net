@@ -5,5 +5,8 @@ internal enum VoiceSocketFrameType
     GetRouterRtpCapabilities,
     Join,
     CreatePlainTransport,
-    Produce
+    Produce,
+    NewPeer,
+    NetworkStat,
+    PeerClosed
 }

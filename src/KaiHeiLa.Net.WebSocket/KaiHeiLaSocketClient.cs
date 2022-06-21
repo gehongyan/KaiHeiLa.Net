@@ -1156,7 +1156,9 @@ public partial class KaiHeiLaSocketClient : BaseSocketClient, IKaiHeiLaClient
                                         {
                                             foreach (IAudioClient audioClient in Guilds.Where(g => g.AudioClient is not null).Select(g => g.AudioClient))
                                             {
-                                                await (audioClient as AudioClient).SelfConnectPromise.TrySetResultAsync(true);
+                                                TaskCompletionSource<bool> taskCompletionSource = ((AudioClient) audioClient).SelfConnectPromise;
+                                                if(!taskCompletionSource.Task.IsCompleted)
+                                                    await taskCompletionSource.TrySetResultAsync(true);
                                             }
                                         }
                                     }

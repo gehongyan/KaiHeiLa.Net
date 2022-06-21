@@ -47,12 +47,18 @@ namespace KaiHeiLa.Audio
             remove => _sentDataEvent.Remove(value);
         }
         private readonly AsyncEvent<Func<int, Task>> _sentDataEvent = new AsyncEvent<Func<int, Task>>();
-        public event Func<uint, bool, object, Task> ReceivedEvent
+        public event Func<uint, bool, object, Task> ReceivedResponse
         {
-            add => _receivedEvent.Add(value);
-            remove => _receivedEvent.Remove(value);
+            add => _receivedResponse.Add(value);
+            remove => _receivedResponse.Remove(value);
         }
-        private readonly AsyncEvent<Func<uint, bool, object, Task>> _receivedEvent = new AsyncEvent<Func<uint, bool, object, Task>>();
+        private readonly AsyncEvent<Func<uint, bool, object, Task>> _receivedResponse = new AsyncEvent<Func<uint, bool, object, Task>>();
+        public event Func<VoiceSocketFrameType, object, Task> ReceivedNotification
+        {
+            add => _receivedNotification.Add(value);
+            remove => _receivedNotification.Remove(value);
+        }
+        private readonly AsyncEvent<Func<VoiceSocketFrameType, object, Task>> _receivedNotification = new AsyncEvent<Func<VoiceSocketFrameType, object, Task>>();
         public event Func<byte[], Task> ReceivedPacket 
         { 
             add => _receivedPacketEvent.Add(value);
@@ -114,15 +120,21 @@ namespace KaiHeiLa.Audio
                     decompressed.Position = 0;
                     using (var reader = new StreamReader(decompressed))
                     {
-                        var msg = JsonSerializer.Deserialize<VoiceSocketResponseFrame>(reader.ReadToEnd(), serializerOptions);
-                        await _receivedEvent.InvokeAsync(msg.Id, msg.Okay, msg.Payload).ConfigureAwait(false);
+                        var msg = JsonSerializer.Deserialize<VoiceSocketFrame>(reader.ReadToEnd(), serializerOptions);
+                        if (msg.Response.HasValue && msg.Response.Value)
+                            await _receivedResponse.InvokeAsync(msg.Id!.Value, msg.Okay!.Value, msg.Payload).ConfigureAwait(false);
+                        else if (msg.Notification.HasValue && msg.Notification.Value)
+                            await _receivedNotification.InvokeAsync(msg.Type!.Value, msg.Payload).ConfigureAwait(false);
                     }
                 }
             };
             WebSocketClient.TextMessage += async text =>
             {
-                var msg = JsonSerializer.Deserialize<VoiceSocketResponseFrame>(text, serializerOptions);
-                await _receivedEvent.InvokeAsync(msg.Id, msg.Okay, msg.Payload).ConfigureAwait(false);
+                var msg = JsonSerializer.Deserialize<VoiceSocketFrame>(text, serializerOptions);
+                if (msg.Response.HasValue && msg.Response.Value)
+                    await _receivedResponse.InvokeAsync(msg.Id!.Value, msg.Okay!.Value, msg.Payload).ConfigureAwait(false);
+                else if (msg.Notification.HasValue && msg.Notification.Value)
+                    await _receivedNotification.InvokeAsync(msg.Type!.Value, msg.Payload).ConfigureAwait(false);
             };
             WebSocketClient.Closed += async ex =>
             {
@@ -152,7 +164,7 @@ namespace KaiHeiLa.Audio
         public async Task SendAsync(VoiceSocketFrameType type, object payload, RequestOptions options = null)
         {
             byte[] bytes = null;
-            payload = new VoiceSocketRequestFrame { Type = type, Id = _sequence, Request = true, Payload = payload };
+            payload = new VoiceSocketFrame { Type = type, Id = _sequence, Request = true, Payload = payload };
             bytes = System.Text.Encoding.UTF8.GetBytes(SerializeJson(payload));
             await WebSocketClient.SendAsync(bytes, 0, bytes.Length, true).ConfigureAwait(false);
             _sentFrames[_sequence++] = type;
@@ -194,6 +206,7 @@ namespace KaiHeiLa.Audio
             await SendAsync(VoiceSocketFrameType.Produce, new ProduceParams(transportId)
             {
                 AppData = new object(),
+                Kind = "audio",
                 PeerId = string.Empty,
                 RTPParameters = new RTPParameters
                 {
