@@ -58,6 +58,7 @@ namespace KaiHeiLa.Audio
 
         private KaiHeiLaSocketClient KaiHeiLa => Guild.KaiHeiLa;
         public ConnectionState ConnectionState => _connection.State;
+        public uint SSRC => _ssrc;
 
         /// <summary> Creates a new REST/WebSocket KaiHeiLa client. </summary>
         internal AudioClient(SocketGuild guild, int clientId, ulong channelId)
@@ -69,7 +70,7 @@ namespace KaiHeiLa.Audio
             ApiClient = new KaiHeiLaVoiceAPIClient(guild.Id, KaiHeiLa.WebSocketProvider, KaiHeiLa.UdpSocketProvider);
             ApiClient.SentGatewayMessage += async opCode => await _audioLogger.DebugAsync($"Sent {opCode}").ConfigureAwait(false);
             ApiClient.SentDiscovery += async () => await _audioLogger.DebugAsync("Sent Discovery").ConfigureAwait(false);
-            //ApiClient.SentData += async bytes => await _audioLogger.DebugAsync($"Sent {bytes} Bytes").ConfigureAwait(false);
+            ApiClient.SentData += async bytes => await _audioLogger.DebugAsync($"Sent {bytes} Bytes").ConfigureAwait(false);
             ApiClient.ReceivedResponse += ProcessResponseAsync;
             ApiClient.ReceivedNotification += ProcessNotificationAsync;
             ApiClient.ReceivedPacket += ProcessPacketAsync;
@@ -238,7 +239,9 @@ namespace KaiHeiLa.Audio
                             await _audioLogger.DebugAsync($"Received Response of {type}").ConfigureAwait(false);
                             var data = ((JsonElement) payload).Deserialize<CreatePlainTransportResponse>(_serializerOptions);
                             ApiClient.SetUdpEndpoint(data.Ip, data.Port);
+                            Console.WriteLine($"RTCP Endpoint: rtp://{data.Ip}:{data.Port}?rtcpport={data.RTCPPort}");
                             _ssrc = (uint) _ssrcGenerator.Next(1, ushort.MaxValue);
+                            Console.WriteLine($"SSRC: {_ssrc}");
                             // Wait for self user connects
                             await SelfConnectPromise.Task.ConfigureAwait(false);
                             await ApiClient.SendProduceRequestAsync(data.Id, _ssrc).ConfigureAwait(false);

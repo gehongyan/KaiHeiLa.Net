@@ -16,7 +16,7 @@ namespace KaiHeiLa.Net.Samples.AudioBot.Modules
             => ReplyTextAsync("pong!");
         
         // The command's Run Mode MUST be set to RunMode.Async, otherwise, being connected to a voice channel will block the gateway thread.
-        [Command("join", RunMode = RunMode.Async)] 
+        [Command("join", RunMode = RunMode.Async)]
         public async Task JoinChannel(IVoiceChannel? channel = null)
         {
             if (Context.User is not IGuildUser user)
@@ -33,7 +33,7 @@ namespace KaiHeiLa.Net.Samples.AudioBot.Modules
             AudioClientManager.AudioClient = await channel.ConnectAsync();
         }
         
-        [Command("leave", RunMode = RunMode.Async)] 
+        [Command("leave", RunMode = RunMode.Async)]
         public async Task LeaveChannel()
         {
             IReadOnlyCollection<IVoiceChannel> channels = await Context.Message.Guild.CurrentUser
@@ -50,6 +50,16 @@ namespace KaiHeiLa.Net.Samples.AudioBot.Modules
             {
                 await voiceChannel.DisconnectAsync();
             }
+        }
+
+        [Command("play", RunMode = RunMode.Async)]
+        public async Task PlayDemo()
+        {
+            string dataPath = Path.Combine(AppContext.BaseDirectory, "Data");
+            string audioRoot = Path.Combine(dataPath, "DiscordAudio");
+            string audioPath = Path.Combine(audioRoot, "demoAudio.mp3");
+            new Task<Task>(async () => await AudioClientManager.SendAudioStreamFromFileAsync(audioPath)).Start();
+            await ReplyKMarkdownAsync("Playing demo audio...");
         }
         
     }
