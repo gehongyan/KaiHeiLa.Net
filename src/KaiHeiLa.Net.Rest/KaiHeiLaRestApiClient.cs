@@ -457,7 +457,7 @@ internal class KaiHeiLaRestApiClient : IDisposable
         options = RequestOptions.CreateOrClone(options);
 
         var ids = new BucketIds(channelId: channelId);
-        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channels/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
+        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channel/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
     }
     
     public async Task<Channel> ModifyGuildChannelAsync(ulong channelId, ModifyTextChannelParams args, RequestOptions options = null)
@@ -472,7 +472,7 @@ internal class KaiHeiLaRestApiClient : IDisposable
         options = RequestOptions.CreateOrClone(options);
 
         var ids = new BucketIds(channelId: channelId);
-        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channels/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
+        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channel/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
     }
     
     public async Task<Channel> ModifyGuildChannelAsync(ulong channelId, ModifyVoiceChannelParams args, RequestOptions options = null)
@@ -486,7 +486,7 @@ internal class KaiHeiLaRestApiClient : IDisposable
         options = RequestOptions.CreateOrClone(options);
 
         var ids = new BucketIds(channelId: channelId);
-        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channels/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
+        return await SendJsonAsync<Channel>(HttpMethod.Post, () => $"channel/update", args, ids, clientBucket: ClientBucketType.SendEdit, options: options).ConfigureAwait(false);
     }
     
     public async Task<Channel> CreateGuildChannelAsync(CreateGuildChannelParams args, RequestOptions options = null)

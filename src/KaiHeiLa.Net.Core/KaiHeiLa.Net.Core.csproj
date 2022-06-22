@@ -5,9 +5,9 @@
         <Nullable>disable</Nullable>
         <RootNamespace>KaiHeiLa</RootNamespace>
         <LangVersion>default</LangVersion>
-        <Version>0.0.27-alpha</Version>
+        <Version>0.0.28-alpha</Version>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-        <PackageVersion>0.0.27-alpha</PackageVersion>
+        <PackageVersion>0.0.28-alpha</PackageVersion>
         <Authors>gehongyan</Authors>
         <Description>KaiHeiLa.Net is an unofficial C# .NET implementation for KaiHeiLa API.</Description>
         <PackageProjectUrl>https://github.com/gehongyan/KaiHeiLa.Net</PackageProjectUrl>
@@ -15,7 +15,7 @@
         <RepositoryType>git</RepositoryType>
         <PackageReleaseNotes>Simply implementation of messages receiving and sending</PackageReleaseNotes>
         <Company>gehongyan</Company>
-        <AssemblyVersion>0.0.27.0</AssemblyVersion>
+        <AssemblyVersion>0.0.28.0</AssemblyVersion>
         <TargetFramework>net6.0</TargetFramework>
     </PropertyGroup>
 
